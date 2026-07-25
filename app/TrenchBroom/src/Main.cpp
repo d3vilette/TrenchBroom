@@ -31,6 +31,7 @@
 #include <QSurfaceFormat>
 #include <QtGlobal>
 
+#include "AgentInterface.h"
 #include "base/PreferenceManager.h"
 #include "prefs/Preferences.h"
 #include "ui/Action.h"
@@ -337,6 +338,12 @@ int main(int argc, char* argv[])
   populateMainMenu(*appController);
   installFileEventFilter(*appController);
 #endif
+
+  // Noiuake: file-based automation interface, active only when TB_AGENT_DIR
+  // is set in the environment (see AgentInterface.h for the protocol).
+  // Constructed before askForAutoUpdates so the poll timer is live even
+  // while first-run modal dialogs hold up main().
+  auto agentInterface = AgentInterface{*appController};
 
   appController->askForAutoUpdates();
   appController->triggerAutoUpdateCheck();
