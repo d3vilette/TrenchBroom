@@ -329,7 +329,8 @@ public: // performing moves
     return false;
   }
 
-  virtual HandleType::Position getHandlePosition(const mdl::Hit& hit) const
+  // explicit typename: MSVC 19.39 (VS 17.9) lacks C++20 P0634 here
+  virtual typename HandleType::Position getHandlePosition(const mdl::Hit& hit) const
   {
     contract_pre(hit.isMatch());
     contract_pre(hit.hasType(HandleType::HandleHitType));

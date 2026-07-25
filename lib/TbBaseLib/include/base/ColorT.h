@@ -50,7 +50,9 @@ template <AnyColorComponentType ComponentType>
 struct ComponentValue
 {
   using Type = ComponentType;
-  using ValueType = Type::ValueType;
+  // explicit `typename`s below: MSVC 19.39 (VS 17.9) doesn't implement C++20
+  // P0634 (implicit typename) in these contexts; conformant either way
+  using ValueType = typename Type::ValueType;
 
   ValueType value;
 
@@ -66,7 +68,7 @@ struct ComponentValue
   }
 
   static constexpr ComponentValue fromNormalizedValue(
-    const Type::NormalizedValueType value)
+    const typename Type::NormalizedValueType value)
   {
     return ComponentValue{Type::fromNormalizedValue(value)};
   }
@@ -77,7 +79,7 @@ struct ComponentValue
            | kdl::optional_transform([](const auto& v) { return ComponentValue{v}; });
   }
 
-  constexpr Type::NormalizedValueType normalize() const
+  constexpr typename Type::NormalizedValueType normalize() const
   {
     return Type::normalizeValue(value);
   }
@@ -120,7 +122,7 @@ template <typename... ComponentValues>
   requires(AllValueTypesEqual<typename ComponentValues::Type...>)
 constexpr auto componentVector(const std::tuple<ComponentValues...>& values)
 {
-  using T = std::tuple_element_t<0, std::tuple<ComponentValues...>>::ValueType;
+  using T = typename std::tuple_element_t<0, std::tuple<ComponentValues...>>::ValueType;
   constexpr auto S = sizeof...(ComponentValues);
 
   return std::apply(
@@ -156,11 +158,14 @@ template <typename... ComponentTypes>
 constexpr auto fromNormalizedValues(
   const std::tuple<typename ComponentTypes::NormalizedValueType...>& values)
 {
-  return std::apply(
-    [](const auto&... value) {
-      return std::tuple{ComponentValue<ComponentTypes>::fromNormalizedValue(value)...};
-    },
-    values);
+  // index_sequence formulation instead of expanding ComponentTypes inside a
+  // lambda: MSVC 19.39 rejects enclosing-scope pack expansion in lambda
+  // bodies (C3520); same pattern as parseComponentValuesImpl below
+  using Tuple = std::tuple<ComponentTypes...>;
+  return [&]<size_t... I>(std::index_sequence<I...>) {
+    return std::tuple{ComponentValue<std::tuple_element_t<I, Tuple>>::
+                        fromNormalizedValue(std::get<I>(values))...};
+  }(std::make_index_sequence<sizeof...(ComponentTypes)>{});
 }
 
 template <typename... ComponentTypes>
