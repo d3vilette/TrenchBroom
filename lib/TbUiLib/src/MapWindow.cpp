@@ -129,11 +129,26 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <iterator>
 #include <stdexcept>
 #include <string>
 #include <variant>
 #include <vector>
+
+// Noiuake toolbar compile/launch
+#include <QDialog>
+#include <QTextEdit>
+#include <QVBoxLayout>
+
+#include "gl/PerspectiveCamera.h"
+#include "mdl/CompilationConfig.h"
+#include "mdl/GameEngineConfig.h"
+#include "mdl/GameInfo.h"
+#include "ui/CompilationRun.h"
+#include "ui/CompilationVariables.h"
+#include "ui/LaunchGameEngine.h"
+#include "ui/MapView3D.h"
 
 
 namespace tb::ui
@@ -513,6 +528,7 @@ void MapWindow::createToolBar()
   }
 
   m_toolBar->addWidget(m_gridChoice);
+  noiuakeAddToolBarActions();
 }
 
 void MapWindow::updateToolBarWidgets()
@@ -2624,5 +2640,168 @@ DebugPaletteWindow::DebugPaletteWindow(QWidget* parent)
 }
 
 DebugPaletteWindow::~DebugPaletteWindow() = default;
+
+// ============================================================================
+// Noiuake: one-click toolbar compile + launch
+//
+// Three buttons run the game config's compile profiles by name fragment
+// ("blockout" / "fast" / "final|full"); two more launch the first game
+// engine profile — plain, or spawning the player at the current 3D camera
+// (the inverse of the engine's tb_look, via its +spawn_at startup cvar).
+// Icons: drop SVGs named NoiuakeCompileBlockout/Fast/Full.svg and
+// NoiuakeLaunchAtView/NoiuakeLaunch.svg into resources/graphics/images/ and
+// wire them below; text labels until then.
+// ============================================================================
+
+void MapWindow::noiuakeAddToolBarActions()
+{
+  m_toolBar->addSeparator();
+
+  const auto add = [&](const QString& text, const QString& tip, auto fn) {
+    auto* action = m_toolBar->addAction(text);
+    action->setToolTip(tip);
+    connect(action, &QAction::triggered, this, std::move(fn));
+  };
+
+  add("Blockout", "Compile: blockout (qbsp only, fastest)", [this]() {
+    noiuakeRunCompile("blockout");
+  });
+  add("Fast", "Compile: fast test (fast vis + dirt light)", [this]() {
+    noiuakeRunCompile("fast");
+  });
+  add("Full", "Compile: final quality (full vis + extra4 bounce dirt)", [this]() {
+    noiuakeRunCompile("final");
+  });
+  add("Launch @ View", "Launch the game, spawning at the current 3D camera", [this]() {
+    noiuakeLaunch(true);
+  });
+  add("Launch", "Launch the game on this map", [this]() { noiuakeLaunch(false); });
+}
+
+void MapWindow::noiuakeRunCompile(const QString& nameFragment)
+{
+  const auto& map = m_document->map();
+  if (!map.persistent())
+  {
+    statusBar()->showMessage("Noiuake compile: save the map first", 5000);
+    return;
+  }
+
+  const auto& profiles = map.gameInfo().compilationConfig.profiles;
+  const auto it = std::ranges::find_if(profiles, [&](const auto& profile) {
+    return QString::fromStdString(profile.name).contains(nameFragment, Qt::CaseInsensitive);
+  });
+  if (it == profiles.end())
+  {
+    statusBar()->showMessage(
+      QString{"Noiuake compile: no profile matching '%1' for this game"}.arg(
+        nameFragment),
+      5000);
+    return;
+  }
+
+  auto* view3D = findChild<MapView3D*>();
+  if (!view3D)
+  {
+    statusBar()->showMessage("Noiuake compile: no 3D view", 5000);
+    return;
+  }
+
+  if (!m_noiuakeCompileRun)
+  {
+    m_noiuakeCompileRun = new CompilationRun{};
+    m_noiuakeCompileRun->setParent(this);
+
+    m_noiuakeCompileDialog = new QDialog{this};
+    m_noiuakeCompileDialog->setWindowTitle("Noiuake Compile Output");
+    m_noiuakeCompileDialog->resize(700, 300);
+    auto* layout = new QVBoxLayout{};
+    m_noiuakeCompileOutput = new QTextEdit{};
+    m_noiuakeCompileOutput->setReadOnly(true);
+    layout->addWidget(m_noiuakeCompileOutput);
+    m_noiuakeCompileDialog->setLayout(layout);
+
+    connect(m_noiuakeCompileRun, &CompilationRun::compilationEnded, this, [this]() {
+      statusBar()->showMessage("Noiuake compile: finished (see output window)", 5000);
+    });
+  }
+
+  if (m_noiuakeCompileRun->running())
+  {
+    statusBar()->showMessage("Noiuake compile: a compile is already running", 5000);
+    return;
+  }
+
+  m_noiuakeCompileOutput->clear();
+  m_noiuakeCompileDialog->show();
+
+  m_noiuakeCompileRun->run(*it, map, view3D->perspectiveCamera(), m_noiuakeCompileOutput)
+    | kdl::transform([&]() {
+        statusBar()->showMessage(
+          QString{"Noiuake compile: running '%1'..."}.arg(
+            QString::fromStdString(it->name)),
+          5000);
+      })
+    | kdl::transform_error([&](const auto& e) {
+        statusBar()->showMessage(
+          QString{"Noiuake compile failed to start: %1"}.arg(
+            QString::fromStdString(e.msg)),
+          8000);
+      });
+}
+
+void MapWindow::noiuakeLaunch(const bool atCameraView)
+{
+  const auto& map = m_document->map();
+  const auto& profiles = map.gameInfo().gameEngineConfig.profiles;
+  if (profiles.empty())
+  {
+    statusBar()->showMessage(
+      "Noiuake launch: no game engine profile configured for this game", 5000);
+    return;
+  }
+
+  auto profile = profiles.front();
+
+  if (atCameraView)
+  {
+    auto* view3D = findChild<MapView3D*>();
+    if (!view3D)
+    {
+      statusBar()->showMessage("Noiuake launch: no 3D view", 5000);
+      return;
+    }
+    const auto& camera = view3D->perspectiveCamera();
+    const auto pos = camera.position();
+    const auto dir = camera.direction();
+
+    // inverse of Quake's AngleVectors: +pitch looks down
+    constexpr auto radToDeg = 180.0f / float(M_PI);
+    const auto pitch =
+      -std::asin(std::clamp(dir.z(), -1.0f, 1.0f)) * radToDeg;
+    const auto yaw = std::atan2(dir.y(), dir.x()) * radToDeg;
+
+    profile.parameterSpec += fmt::format(
+      " +spawn_at \"{:.1f} {:.1f} {:.1f} {:.1f} {:.1f}\"",
+      pos.x(),
+      pos.y(),
+      pos.z(),
+      pitch,
+      yaw);
+  }
+
+  launchGameEngineProfile(profile, LaunchGameEngineVariables{map})
+    | kdl::transform([&]() {
+        statusBar()->showMessage(
+          atCameraView ? "Noiuake: game launching at camera view"
+                       : "Noiuake: game launching",
+          5000);
+      })
+    | kdl::transform_error([&](const auto& e) {
+        statusBar()->showMessage(
+          QString{"Noiuake launch failed: %1"}.arg(QString::fromStdString(e.msg)),
+          8000);
+      });
+}
 
 } // namespace tb::ui

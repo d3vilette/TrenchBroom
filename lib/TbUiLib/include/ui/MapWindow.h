@@ -41,6 +41,8 @@ class QLabel;
 class QSplitter;
 class QTimer;
 class QToolBar;
+class QTextEdit;
+class QDialog;
 
 namespace tb
 {
@@ -72,6 +74,7 @@ namespace ui
 class Action;
 class AppController;
 class CompilationDialog;
+class CompilationRun;
 class Console;
 class InfoPanel;
 class Inspector;
@@ -95,6 +98,11 @@ private:
   QTimer* m_autosaveTimer = nullptr;
 
   QToolBar* m_toolBar = nullptr;
+
+  // Noiuake: one-click toolbar compile/launch (see noiuakeAddToolBarActions)
+  CompilationRun* m_noiuakeCompileRun = nullptr;
+  QTextEdit* m_noiuakeCompileOutput = nullptr;
+  QDialog* m_noiuakeCompileDialog = nullptr;
 
   QSplitter* m_hSplitter = nullptr;
   QSplitter* m_vSplitter = nullptr;
@@ -388,6 +396,11 @@ public:
   void focusChange(QWidget* oldFocus, QWidget* newFocus);
 
   MapViewBase* currentMapViewBase();
+
+  // Noiuake toolbar compile/launch
+  void noiuakeAddToolBarActions();
+  void noiuakeRunCompile(const QString& nameFragment);
+  void noiuakeLaunch(bool atCameraView);
 
 private:
   const mdl::CompilationProfile* lastCompilationProfile() const;
