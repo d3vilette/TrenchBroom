@@ -26,12 +26,16 @@
 #include <QSaveFile>
 #include <QTextStream>
 
+#include "gl/Camera.h"
 #include "mdl/Map.h"
 #include "ui/AppController.h"
 #include "ui/MapDocument.h"
+#include "ui/MapView3D.h"
 #include "ui/MapWindow.h"
 #include "ui/MapWindowManager.h"
 #include "ui/QPathUtils.h"
+
+#include <cmath>
 
 namespace tb::ui
 {
@@ -110,6 +114,10 @@ void AgentInterface::execute(const QString& line)
   {
     cmdOpen(arg);
   }
+  else if (cmd == "camera" && !arg.isEmpty())
+  {
+    cmdCamera(arg);
+  }
   else
   {
     log("ERR unknown command: " + line);
@@ -184,6 +192,58 @@ void AgentInterface::cmdOpen(const QString& path)
   {
     log("ERR open failed: " + path);
   }
+}
+
+void AgentInterface::cmdCamera(const QString& args)
+{
+  const auto parts = args.split(' ', Qt::SkipEmptyParts);
+  if (parts.size() != 5)
+  {
+    log("ERR camera: expected <x> <y> <z> <pitch> <yaw>");
+    return;
+  }
+
+  float v[5];
+  for (auto i = 0; i < 5; ++i)
+  {
+    auto ok = false;
+    v[i] = parts[i].toFloat(&ok);
+    if (!ok)
+    {
+      log("ERR camera: bad number: " + parts[i]);
+      return;
+    }
+  }
+
+  auto* window = m_appController.mapWindowManager().topMapWindow();
+  if (!window)
+  {
+    log("ERR camera: no map window open");
+    return;
+  }
+  auto* view3D = window->findChild<MapView3D*>();
+  if (!view3D)
+  {
+    log("ERR camera: no 3D view in the top map window");
+    return;
+  }
+
+  // Quake angle convention (AngleVectors): positive pitch looks DOWN
+  const auto pitch = v[3] * float(M_PI) / 180.0f;
+  const auto yaw = v[4] * float(M_PI) / 180.0f;
+  const auto dir = vm::vec3f{
+    std::cos(pitch) * std::cos(yaw),
+    std::cos(pitch) * std::sin(yaw),
+    -std::sin(pitch)};
+
+  auto& camera = static_cast<MapViewBase*>(view3D)->camera();
+  camera.moveTo(vm::vec3f{v[0], v[1], v[2]});
+  camera.setDirection(vm::normalize(dir), vm::vec3f{0.0f, 0.0f, 1.0f});
+
+  // deliberately no raise()/activateWindow(): the owner is usually in the
+  // game when tb_look fires; TB updates quietly in the background
+  log(QString{"OK camera %1 %2 %3 / pitch %4 yaw %5"}
+        .arg(v[0]).arg(v[1]).arg(v[2]).arg(v[3]).arg(v[4]));
 }
 
 void AgentInterface::log(const QString& message)
