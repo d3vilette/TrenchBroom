@@ -2790,11 +2790,12 @@ void MapWindow::noiuakeLaunch(const bool atCameraView)
       -std::asin(std::clamp(dir.z(), -1.0f, 1.0f)) * radToDeg;
     const auto yaw = std::atan2(dir.y(), dir.x()) * radToDeg;
 
-    // comma-separated on purpose: a single token survives every quoting
-    // layer between here and the engine's command buffer (spaces do not —
-    // the value arrived empty when quoted)
+    // "-spawnat" PARAM (not a +command): Quake's stuffcmds truncates
+    // +command values at any '-', so negative coordinates can't ride a
+    // +command — the engine reads this straight from argv instead.
+    // Comma-joined so it stays one token through every quoting layer.
     profile.parameterSpec += fmt::format(
-      " +spawn_at {:.1f},{:.1f},{:.1f},{:.1f},{:.1f}",
+      " -spawnat {:.1f},{:.1f},{:.1f},{:.1f},{:.1f}",
       pos.x(),
       pos.y(),
       pos.z(),
