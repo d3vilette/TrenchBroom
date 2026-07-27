@@ -2790,8 +2790,11 @@ void MapWindow::noiuakeLaunch(const bool atCameraView)
       -std::asin(std::clamp(dir.z(), -1.0f, 1.0f)) * radToDeg;
     const auto yaw = std::atan2(dir.y(), dir.x()) * radToDeg;
 
+    // comma-separated on purpose: a single token survives every quoting
+    // layer between here and the engine's command buffer (spaces do not —
+    // the value arrived empty when quoted)
     profile.parameterSpec += fmt::format(
-      " +spawn_at \"{:.1f} {:.1f} {:.1f} {:.1f} {:.1f}\"",
+      " +spawn_at {:.1f},{:.1f},{:.1f},{:.1f},{:.1f}",
       pos.x(),
       pos.y(),
       pos.z(),
