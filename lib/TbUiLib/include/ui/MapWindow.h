@@ -103,6 +103,9 @@ private:
   CompilationRun* m_noiuakeCompileRun = nullptr;
   QTextEdit* m_noiuakeCompileOutput = nullptr;
   QDialog* m_noiuakeCompileDialog = nullptr;
+  QAction* m_noiuakeLaunchAction = nullptr;
+  QAction* m_noiuakeLaunchAtViewAction = nullptr;
+  QTimer* m_noiuakeGameCheckTimer = nullptr;
 
   QSplitter* m_hSplitter = nullptr;
   QSplitter* m_vSplitter = nullptr;
@@ -401,6 +404,8 @@ public:
   void noiuakeAddToolBarActions();
   void noiuakeRunCompile(const QString& nameFragment);
   void noiuakeLaunch(bool atCameraView);
+  bool noiuakeGameRunning() const;
+  void noiuakeUpdateLaunchButtons();
 
 private:
   const mdl::CompilationProfile* lastCompilationProfile() const;

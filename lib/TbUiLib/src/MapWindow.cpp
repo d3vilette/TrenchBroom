@@ -137,8 +137,12 @@
 #include <vector>
 
 // Noiuake toolbar compile/launch
+#include <QDateTime>
 #include <QDialog>
+#include <QFile>
+#include <QFileInfo>
 #include <QTextEdit>
+#include <QTextStream>
 #include <QVBoxLayout>
 
 #include "gl/PerspectiveCamera.h"
@@ -2677,14 +2681,53 @@ void MapWindow::noiuakeAddToolBarActions()
   add("FinalSlow.svg", "Full", "Compile: final quality (full vis + extra4 bounce dirt)", [this]() {
     noiuakeRunCompile("final");
   });
-  add(
-    "LaunchMapToLocation.svg",
-    "Launch @ View",
-    "Launch the game, spawning at the current 3D camera",
-    [this]() { noiuakeLaunch(true); });
-  add("LaunchEngineToMap.svg", "Launch", "Launch the game on this map", [this]() {
-    noiuakeLaunch(false);
+  m_noiuakeLaunchAtViewAction = m_toolBar->addAction(
+    loadSVGIcon(std::filesystem::path{"LaunchMapToLocation.svg"}), "Launch @ View");
+  m_noiuakeLaunchAtViewAction->setToolTip(
+    "Launch the game spawning at the current 3D camera — or, if the game is "
+    "already running, teleport its player there");
+  connect(m_noiuakeLaunchAtViewAction, &QAction::triggered, this, [this]() {
+    noiuakeLaunch(true);
   });
+
+  m_noiuakeLaunchAction = m_toolBar->addAction(
+    loadSVGIcon(std::filesystem::path{"LaunchEngineToMap.svg"}), "Launch");
+  m_noiuakeLaunchAction->setToolTip("Launch the game on this map");
+  connect(
+    m_noiuakeLaunchAction, &QAction::triggered, this, [this]() { noiuakeLaunch(false); });
+
+  // grey out Launch while a game instance is running (engine heartbeat file)
+  m_noiuakeGameCheckTimer = new QTimer{this};
+  connect(m_noiuakeGameCheckTimer, &QTimer::timeout, this, [this]() {
+    noiuakeUpdateLaunchButtons();
+  });
+  m_noiuakeGameCheckTimer->start(2000);
+}
+
+bool MapWindow::noiuakeGameRunning() const
+{
+  const auto& profiles = m_document->map().gameInfo().gameEngineConfig.profiles;
+  if (profiles.empty())
+  {
+    return false;
+  }
+  const auto heartbeat =
+    QFileInfo{pathAsQPath(profiles.front().path.parent_path() / "quakespasm.heartbeat")};
+  return heartbeat.exists()
+         && heartbeat.lastModified().secsTo(QDateTime::currentDateTime()) <= 3;
+}
+
+void MapWindow::noiuakeUpdateLaunchButtons()
+{
+  if (!m_noiuakeLaunchAction)
+  {
+    return;
+  }
+  const auto running = noiuakeGameRunning();
+  m_noiuakeLaunchAction->setEnabled(!running);
+  m_noiuakeLaunchAction->setToolTip(
+    running ? "Game already running (close it to launch a fresh instance)"
+            : "Launch the game on this map");
 }
 
 void MapWindow::noiuakeRunCompile(const QString& nameFragment)
@@ -2772,6 +2815,9 @@ void MapWindow::noiuakeLaunch(const bool atCameraView)
 
   auto profile = profiles.front();
 
+  auto camPos = vm::vec3f{};
+  auto camPitch = 0.0f;
+  auto camYaw = 0.0f;
   if (atCameraView)
   {
     auto* view3D = findChild<MapView3D*>();
@@ -2781,26 +2827,56 @@ void MapWindow::noiuakeLaunch(const bool atCameraView)
       return;
     }
     const auto& camera = view3D->perspectiveCamera();
-    const auto pos = camera.position();
+    camPos = camera.position();
     const auto dir = camera.direction();
 
     // inverse of Quake's AngleVectors: +pitch looks down
     constexpr auto radToDeg = 180.0f / float(M_PI);
-    const auto pitch =
-      -std::asin(std::clamp(dir.z(), -1.0f, 1.0f)) * radToDeg;
-    const auto yaw = std::atan2(dir.y(), dir.x()) * radToDeg;
+    camPitch = -std::asin(std::clamp(dir.z(), -1.0f, 1.0f)) * radToDeg;
+    camYaw = std::atan2(dir.y(), dir.x()) * radToDeg;
+  }
 
+  if (atCameraView && noiuakeGameRunning())
+  {
+    // game already up: teleport its player instead of launching a second
+    // instance — append a setpos to the engine's agent command file (our
+    // launch profiles always run with +agent_enable 1). setpos takes the
+    // ORIGIN, so drop the eye by the standard 22-unit view offset.
+    const auto cmdPath = pathAsQPath(profile.path.parent_path() / "agent_cmds.txt");
+    auto file = QFile{cmdPath};
+    if (file.open(QFile::WriteOnly | QFile::Append | QFile::Text))
+    {
+      QTextStream{&file} << QString::fromStdString(fmt::format(
+        "setpos {:.1f} {:.1f} {:.1f} {:.1f} {:.1f} 0\n",
+        camPos.x(),
+        camPos.y(),
+        camPos.z() - 22.0f,
+        camPitch,
+        camYaw));
+      statusBar()->showMessage(
+        "Noiuake: teleported the running game's player to the camera", 5000);
+    }
+    else
+    {
+      statusBar()->showMessage(
+        "Noiuake: could not write the running game's command file", 8000);
+    }
+    return;
+  }
+
+  if (atCameraView)
+  {
     // "-spawnat" PARAM (not a +command): Quake's stuffcmds truncates
     // +command values at any '-', so negative coordinates can't ride a
     // +command — the engine reads this straight from argv instead.
     // Comma-joined so it stays one token through every quoting layer.
     profile.parameterSpec += fmt::format(
       " -spawnat {:.1f},{:.1f},{:.1f},{:.1f},{:.1f}",
-      pos.x(),
-      pos.y(),
-      pos.z(),
-      pitch,
-      yaw);
+      camPos.x(),
+      camPos.y(),
+      camPos.z(),
+      camPitch,
+      camYaw);
   }
 
   launchGameEngineProfile(profile, LaunchGameEngineVariables{map})
