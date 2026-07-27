@@ -147,6 +147,7 @@
 #include "mdl/GameInfo.h"
 #include "ui/CompilationRun.h"
 #include "ui/CompilationVariables.h"
+#include "ui/ImageUtils.h"
 #include "ui/LaunchGameEngine.h"
 #include "ui/MapView3D.h"
 
@@ -2657,25 +2658,33 @@ void MapWindow::noiuakeAddToolBarActions()
 {
   m_toolBar->addSeparator();
 
-  const auto add = [&](const QString& text, const QString& tip, auto fn) {
-    auto* action = m_toolBar->addAction(text);
-    action->setToolTip(tip);
-    connect(action, &QAction::triggered, this, std::move(fn));
-  };
+  // owner-authored icons in resources/graphics/images/ (loadSVGIcon resolves
+  // against the deployed images/ dir; falls back to the text label if a file
+  // ever goes missing)
+  const auto add =
+    [&](const char* icon, const QString& text, const QString& tip, auto fn) {
+      auto* action = m_toolBar->addAction(loadSVGIcon(std::filesystem::path{icon}), text);
+      action->setToolTip(tip);
+      connect(action, &QAction::triggered, this, std::move(fn));
+    };
 
-  add("Blockout", "Compile: blockout (qbsp only, fastest)", [this]() {
+  add("BlockoutFastest.svg", "Blockout", "Compile: blockout (qbsp only, fastest)", [this]() {
     noiuakeRunCompile("blockout");
   });
-  add("Fast", "Compile: fast test (fast vis + dirt light)", [this]() {
+  add("LowDetailFast.svg", "Fast", "Compile: fast test (fast vis + dirt light)", [this]() {
     noiuakeRunCompile("fast");
   });
-  add("Full", "Compile: final quality (full vis + extra4 bounce dirt)", [this]() {
+  add("FinalSlow.svg", "Full", "Compile: final quality (full vis + extra4 bounce dirt)", [this]() {
     noiuakeRunCompile("final");
   });
-  add("Launch @ View", "Launch the game, spawning at the current 3D camera", [this]() {
-    noiuakeLaunch(true);
+  add(
+    "LaunchMapToLocation.svg",
+    "Launch @ View",
+    "Launch the game, spawning at the current 3D camera",
+    [this]() { noiuakeLaunch(true); });
+  add("LaunchEngineToMap.svg", "Launch", "Launch the game on this map", [this]() {
+    noiuakeLaunch(false);
   });
-  add("Launch", "Launch the game on this map", [this]() { noiuakeLaunch(false); });
 }
 
 void MapWindow::noiuakeRunCompile(const QString& nameFragment)

@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<svg width="24.000001" height="24" xmlns="http://www.w3.org/2000/svg" xmlns:svg="http://www.w3.org/2000/svg" version="1.1">
+ <metadata id="metadata7">image/svg+xml</metadata>
+
+ <g class="layer" display="inline">
+  <title>Layer 1</title>
+  <g id="layer2">
+   <rect id="rect2416" width="17" height="17" x="3.5" y="3.5" stroke-miterlimit="4" stroke-linecap="round" stroke-width="1.02" stroke="#cccccc" fill="#ff7f00" rx="1" ry="1"/>
+  </g>
+  <g id="layer1" transform="translate(0,-1028.3623)" display="inline">
+   <rect fill="#fe7f00" stroke-width="1px" stroke-dasharray="null" x="10.45" y="9.19" width="5.84" height="4.91" id="svg_1"/>
+  </g>
+  <path fill="#bf5f00" stroke="#bf5f00" stroke-width="1.02" stroke-dasharray="null" stroke-linejoin="round" stroke-linecap="round" d="m4.29,19.97l15.53,-15.34c0.01,0 0.01,15.06 0,15.06c-0.01,0 -15.53,0.28 -15.53,0.28z" id="svg_15" transform="translate(19.8172, 4.625) scale(0.945669, 0.979633) translate(-19.8172, -4.625) translate(4.2875, 4.625) scale(0.97384, 1.01018) translate(-4.2875, -4.625) translate(19.8275, 4.63) scale(0.994972, 0.990833) translate(-19.8275, -4.63) translate(19.8275, 4.63) scale(1.04726, 1) translate(-19.8275, -4.63) translate(4.29, 4.63) scale(0.998994, 1.00509) translate(-4.29, -4.63) translate(4.29, 19.97) scale(1.01006, 1.00917) translate(-4.29, -19.97)"/>
+ </g>
+ <g class="layer">
+  <title>Layer 2</title>
+ </g>
+</svg>
