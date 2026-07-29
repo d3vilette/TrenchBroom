@@ -74,6 +74,14 @@ Result<void> MapWindowManager::createDocument(
   auto* mapWindow = topMapWindow();
   contract_assert(mapWindow != nullptr);
 
+  // Noiuake (#49): on the SDI path this REPLACES the window's open document
+  // with no other prompt anywhere -- ask the same save/discard/cancel
+  // question that closing the window would. Cancel = keep current document.
+  if (!mapWindow->confirmOrDiscardChanges())
+  {
+    return Result<void>{};
+  }
+
   return mapWindow->document().create(
     m_appController.environmentConfig(), gameInfo, mapFormat, worldBounds);
 }
@@ -99,6 +107,15 @@ Result<void> MapWindowManager::loadDocument(
 
   auto* mapWindow = topMapWindow();
   contract_assert(mapWindow != nullptr);
+
+  // Noiuake (#49): same guard as createDocument above -- the SDI path
+  // replaces the open document, so prompt exactly like a window close.
+  // The agent interface's `open` refuses BEFORE this point (it can't answer
+  // a dialog), so only interactive File>Open/Recent ever see the prompt.
+  if (!mapWindow->confirmOrDiscardChanges())
+  {
+    return Result<void>{};
+  }
 
   return mapWindow->document().load(
     m_appController.environmentConfig(),

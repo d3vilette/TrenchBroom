@@ -227,8 +227,12 @@ public:
   bool exportDocumentAsMap();
   bool exportDocument(const mdl::ExportOptions& options);
 
-private:
+public:
+  // Noiuake (#49): public so MapWindowManager can ask before REPLACING this
+  // window's document on the SDI create/load paths (same question closing asks)
   bool confirmOrDiscardChanges();
+
+private:
   bool confirmRevertDocument();
 
 public:
