@@ -39,11 +39,24 @@ class AppController;
  * Commands:
  *   status              write <dir>/tb_agent_status.txt (TB_STATUS/TB_DOC lines)
  *   screenshot <path>   save a PNG grab of each open map window
- *   open <path>         open a .map document
+ *   open <path>         open a .map document. Refuses (ERR to the log) if any
+ *                       open document has unsaved changes -- on Windows SDI
+ *                       the open window's document would be silently replaced
+ *                       (board #46/#49).
  *   camera <x> <y> <z> <pitch> <yaw>
  *                       warp the top map window's 3D viewport camera to the
  *                       given position/angles (Quake convention: +pitch =
  *                       looking down, degrees). Fed by the game's tb_look.
+ *   selection           write <dir>/tb_agent_selection.txt: one TB_SEL line
+ *                       per selected entity (classname + origin), one
+ *                       TB_SEL_BRUSH line per selected brush (parent
+ *                       classname + bounds center), TB_SEL_DONE count=n.
+ *   entities            write <dir>/tb_agent_entities.txt: one TB_ENT line
+ *                       per entity in the open document (classname + origin,
+ *                       worldspawn included), TB_ENT_DONE count=n.
+ *   reload              reload the top document from disk, but ONLY if it has
+ *                       no unsaved changes (ERR otherwise) -- the safe way to
+ *                       pull an external mapfile.py edit into an open TB.
  */
 // no Q_OBJECT: new-style connects don't need the metaobject, and the app
 // target doesn't run moc
@@ -67,6 +80,11 @@ private:
   void cmdScreenshot(const QString& path);
   void cmdOpen(const QString& path);
   void cmdCamera(const QString& args);
+  void cmdSelection();
+  void cmdEntities();
+  void cmdReload();
+
+  bool anyDocumentModified(QString* modifiedPath = nullptr) const;
 
   void log(const QString& message);
 };

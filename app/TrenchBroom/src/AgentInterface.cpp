@@ -27,7 +27,15 @@
 #include <QTextStream>
 
 #include "gl/Camera.h"
+#include "mdl/BrushNode.h"
+#include "mdl/Entity.h"
+#include "mdl/EntityNode.h"
+#include "mdl/EntityNodeBase.h"
 #include "mdl/Map.h"
+#include "mdl/Node.h"
+#include "mdl/NodeQueries.h"
+#include "mdl/Selection.h"
+#include "mdl/WorldNode.h"
 #include "ui/AppController.h"
 #include "ui/MapDocument.h"
 #include "ui/MapView3D.h"
@@ -118,10 +126,44 @@ void AgentInterface::execute(const QString& line)
   {
     cmdCamera(arg);
   }
+  else if (cmd == "selection")
+  {
+    cmdSelection();
+  }
+  else if (cmd == "entities")
+  {
+    cmdEntities();
+  }
+  else if (cmd == "reload")
+  {
+    cmdReload();
+  }
   else
   {
     log("ERR unknown command: " + line);
   }
+}
+
+/* true if any open document has unsaved changes; optionally reports which.
+Agent commands that would discard the in-memory document (open, reload) must
+check this -- the matching UI actions get a confirmation dialog, but a
+file-protocol caller gets no dialog, so the guard has to live here (board
+#46/#49, KNOWN_ISSUES 2026-07-27). */
+bool AgentInterface::anyDocumentModified(QString* modifiedPath) const
+{
+  for (const auto* window : m_appController.mapWindowManager().mapWindows())
+  {
+    const auto& map = window->document().map();
+    if (map.modified())
+    {
+      if (modifiedPath)
+      {
+        *modifiedPath = pathAsQPath(map.path());
+      }
+      return true;
+    }
+  }
+  return false;
 }
 
 void AgentInterface::cmdStatus()
@@ -184,6 +226,15 @@ void AgentInterface::cmdScreenshot(const QString& path)
 
 void AgentInterface::cmdOpen(const QString& path)
 {
+  // on Windows SDI, openDocument() reuses the open window and replaces its
+  // document with NO unsaved-changes prompt (unlike the Revert menu action)
+  auto modifiedPath = QString{};
+  if (anyDocumentModified(&modifiedPath))
+  {
+    log("ERR open: document has unsaved changes: " + modifiedPath);
+    return;
+  }
+
   if (m_appController.openDocument(pathFromQString(path)))
   {
     log("OK open " + path);
@@ -191,6 +242,130 @@ void AgentInterface::cmdOpen(const QString& path)
   else
   {
     log("ERR open failed: " + path);
+  }
+}
+
+void AgentInterface::cmdSelection()
+{
+  const auto* window = m_appController.mapWindowManager().topMapWindow();
+  if (!window)
+  {
+    log("ERR selection: no map window open");
+    return;
+  }
+
+  auto file = QSaveFile{QDir{m_dir}.filePath("tb_agent_selection.txt")};
+  if (!file.open(QFile::WriteOnly | QFile::Text))
+  {
+    log("ERR selection: cannot write selection file");
+    return;
+  }
+
+  auto out = QTextStream{&file};
+  const auto& selection = window->document().map().selection();
+  auto count = 0;
+
+  for (const auto* entityNode : selection.entities)
+  {
+    const auto& entity = entityNode->entity();
+    const auto& origin = entity.origin();
+    out << "TB_SEL classname=" << QString::fromStdString(entity.classname())
+        << " origin=(" << origin.x() << " " << origin.y() << " " << origin.z()
+        << ")\n";
+    ++count;
+  }
+
+  for (const auto* brushNode : selection.brushes)
+  {
+    // a selected brush's useful identity is its parent entity + where it is
+    const auto* parent = brushNode->entity();
+    const auto center = brushNode->logicalBounds().center();
+    out << "TB_SEL_BRUSH parent="
+        << QString::fromStdString(
+             parent ? parent->entity().classname() : std::string{"?"})
+        << " center=(" << center.x() << " " << center.y() << " " << center.z()
+        << ")\n";
+    ++count;
+  }
+
+  out << "TB_SEL_DONE count=" << count << "\n";
+  file.commit();
+  log(QString{"OK selection count=%1"}.arg(count));
+}
+
+void AgentInterface::cmdEntities()
+{
+  auto* window = m_appController.mapWindowManager().topMapWindow();
+  if (!window)
+  {
+    log("ERR entities: no map window open");
+    return;
+  }
+
+  auto file = QSaveFile{QDir{m_dir}.filePath("tb_agent_entities.txt")};
+  if (!file.open(QFile::WriteOnly | QFile::Text))
+  {
+    log("ERR entities: cannot write entities file");
+    return;
+  }
+
+  auto out = QTextStream{&file};
+  auto& worldNode = window->document().map().worldNode();
+  auto count = 0;
+
+  // worldspawn (the WorldNode) is itself an EntityNodeBase, so the root
+  // vector plus a descendant filter yields every entity incl. brush entities
+  auto roots = std::vector<mdl::Node*>{&worldNode};
+  const auto nodes = mdl::collectDescendants(roots);
+  const auto emit_entity = [&](const mdl::EntityNodeBase& entityNode) {
+    const auto& entity = entityNode.entity();
+    const auto& origin = entity.origin();
+    out << "TB_ENT classname=" << QString::fromStdString(entity.classname())
+        << " origin=(" << origin.x() << " " << origin.y() << " " << origin.z()
+        << ")\n";
+    ++count;
+  };
+
+  emit_entity(worldNode);
+  for (const auto* node : nodes)
+  {
+    if (const auto* entityNode = dynamic_cast<const mdl::EntityNodeBase*>(node);
+        entityNode && entityNode != &worldNode)
+    {
+      emit_entity(*entityNode);
+    }
+  }
+
+  out << "TB_ENT_DONE count=" << count << "\n";
+  file.commit();
+  log(QString{"OK entities count=%1"}.arg(count));
+}
+
+void AgentInterface::cmdReload()
+{
+  auto* window = m_appController.mapWindowManager().topMapWindow();
+  if (!window)
+  {
+    log("ERR reload: no map window open");
+    return;
+  }
+
+  const auto& map = window->document().map();
+  if (map.modified())
+  {
+    log("ERR reload: document has unsaved changes: " + pathAsQPath(map.path()));
+    return;
+  }
+
+  const auto path = pathAsQPath(map.path());
+  auto ok = true;
+  window->document().reload() | kdl::transform_error([&](const auto& e) {
+    ok = false;
+    log("ERR reload failed: " + QString::fromStdString(e.msg));
+  });
+  if (ok)
+  {
+    log("OK reload " + path);
   }
 }
 
