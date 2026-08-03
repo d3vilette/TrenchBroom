@@ -19,6 +19,9 @@
 
 #pragma once
 
+#include <QCursor>
+#include <QPoint>
+
 #include "base/NotifierConnection.h"
 #include "ui/MapViewBase.h"
 
@@ -26,6 +29,8 @@
 #include <vector>
 
 class QKeyEvent;
+class QMouseEvent;
+class QWheelEvent;
 
 namespace tb
 {
@@ -45,6 +50,11 @@ private:
   std::unique_ptr<gl::PerspectiveCamera> m_camera;
   std::unique_ptr<FlyModeHelper> m_flyModeHelper;
   bool m_ignoreCameraChangeEvents = false;
+
+  // Noiuake: toggled mouse look (Mouse 4) — see noiuakeSetMouseLook
+  bool m_noiuakeMouseLook = false;
+  QPoint m_noiuakeMouseLookRestorePos;
+  QCursor m_noiuakeMouseLookRestoreCursor;
 
   NotifierConnection m_notifierConnection;
 
@@ -68,6 +78,10 @@ protected: // QWidget overrides
   void keyReleaseEvent(QKeyEvent* event) override;
   void focusInEvent(QFocusEvent* event) override;
   void focusOutEvent(QFocusEvent* event) override;
+  void mousePressEvent(QMouseEvent* event) override;
+  void mouseReleaseEvent(QMouseEvent* event) override;
+  void mouseMoveEvent(QMouseEvent* event) override;
+  void wheelEvent(QWheelEvent* event) override;
 
 protected: // QOpenGLWidget overrides
   void initializeGL() override;
@@ -78,6 +92,13 @@ private: // interaction events
 private: // other events
   void updateFlyMode();
   void resetFlyModeKeys();
+
+  // Noiuake: toggled mouse look. Mouse 4 latches the camera into the same look
+  // mode you normally get by holding the right button, so you can fly with
+  // WASD hands-free; Mouse 4 again (or Escape, or losing focus) releases it.
+  // While latched the pointer is hidden and pinned to the centre of the view,
+  // so looking never runs out of desk the way a right-drag does.
+  void noiuakeSetMouseLook(bool active);
 
 private: // implement ToolBoxConnector interface
   PickRequest pickRequest(float x, float y) const override;
@@ -130,6 +151,9 @@ private: // implement MapViewBase interface
     render::RenderBatch& renderBatch) override;
 
   void beforePopupMenu() override;
+
+public: // override MapViewBase
+  void cancel() override;
 
 public: // implement CameraLinkableView interface
   void linkCamera(CameraLinkHelper& linkHelper) override;

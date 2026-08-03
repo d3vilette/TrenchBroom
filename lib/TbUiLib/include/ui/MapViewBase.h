@@ -215,7 +215,10 @@ public: // tool mode actions
 
 public: // misc actions
   void resetCameraZoom();
-  void cancel();
+  // virtual so a subclass can consume a cancel for a view-local transient mode
+  // before the shared tool/selection/group cancel chain runs (MapView3D uses
+  // this to release latched mouse look)
+  virtual void cancel();
   void deactivateCurrentTool();
 
 public: // reparenting objects

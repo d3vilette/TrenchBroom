@@ -19,6 +19,10 @@
 
 #include "ui/MapView3D.h"
 
+#include <QKeyEvent>
+#include <QMouseEvent>
+#include <QWheelEvent>
+
 #include "base/PreferenceManager.h"
 #include "gl/PerspectiveCamera.h"
 #include "mdl/BezierPatch.h"
@@ -56,6 +60,7 @@
 #include "ui/FaceTool.h" // IWYU pragma: keep
 #include "ui/FaceToolController.h"
 #include "ui/FlyModeHelper.h"
+#include "ui/InputEvent.h"
 #include "ui/MapDocument.h"
 #include "ui/MapViewToolBox.h"
 #include "ui/MoveObjectsToolController.h"
@@ -71,6 +76,7 @@
 #include "kd/contracts.h"
 #include "kd/set_temp.h"
 
+#include "vm/scalar.h"
 #include "vm/util.h"
 
 namespace tb::ui
@@ -183,8 +189,140 @@ void MapView3D::focusInEvent(QFocusEvent* event)
 void MapView3D::focusOutEvent(QFocusEvent* event)
 {
   m_flyModeHelper->resetKeys();
+  // Noiuake: never leave the pointer hidden and pinned once the view is no
+  // longer the one receiving input (alt-tab, click into the inspector, ...).
+  noiuakeSetMouseLook(false);
 
   MapViewBase::focusOutEvent(event);
+}
+
+void MapView3D::mousePressEvent(QMouseEvent* event)
+{
+  // Noiuake: Mouse 4 latches / unlatches mouse look.
+  if (event->button() == Qt::XButton1)
+  {
+    noiuakeSetMouseLook(!m_noiuakeMouseLook);
+    event->accept();
+    return;
+  }
+
+  // While latched the pointer is hidden and pinned to the centre of the view, so
+  // a click would silently act on whatever happens to be under the crosshair.
+  // Swallow it: with the right button held the other buttons do nothing either.
+  if (m_noiuakeMouseLook)
+  {
+    event->accept();
+    return;
+  }
+
+  MapViewBase::mousePressEvent(event);
+}
+
+void MapView3D::mouseReleaseEvent(QMouseEvent* event)
+{
+  if (m_noiuakeMouseLook || event->button() == Qt::XButton1)
+  {
+    // Swallowing the press without its release would leave the input recorder
+    // believing a button is still down, and it would synthesize a drag.
+    event->accept();
+    return;
+  }
+
+  MapViewBase::mouseReleaseEvent(event);
+}
+
+void MapView3D::mouseMoveEvent(QMouseEvent* event)
+{
+  // The isActiveWindow() guard matters: a hover over a *background* TrenchBroom
+  // still delivers motion events, and warping the pointer out from under a user
+  // who is working in another application would be indefensible.
+  if (m_noiuakeMouseLook && isActiveWindow())
+  {
+    // Interpret every motion as a delta from the centre of the view, then warp
+    // the pointer back there. The warp generates another motion event, but it
+    // lands on the centre with a zero delta, so it costs nothing.
+    const auto center = QPointF{rect().center()};
+    const auto delta = event->position() - center;
+    if (!delta.isNull())
+    {
+      m_camera->rotate(
+        float(delta.x()) * lookSpeedH(*m_camera), float(delta.y()) * lookSpeedV(*m_camera));
+      QCursor::setPos(mapToGlobal(rect().center()));
+    }
+
+    event->accept();
+    update();
+    return;
+  }
+
+  MapViewBase::mouseMoveEvent(event);
+}
+
+void MapView3D::wheelEvent(QWheelEvent* event)
+{
+  if (m_noiuakeMouseLook)
+  {
+    // Same as scrolling during a right-button look drag: trim the fly speed
+    // rather than dollying the camera (see LookDragTracker::mouseScroll).
+    const auto factor = pref(Preferences::CameraMouseWheelInvert) ? -1.0f : 1.0f;
+    const auto scrollDist = float(InputEventRecorder::scrollLinesForEvent(*event).y());
+
+    const auto speed = pref(Preferences::CameraFlyMoveSpeed);
+    const auto deltaSpeed = factor * speed * 0.05f * scrollDist;
+    setPref(
+      Preferences::CameraFlyMoveSpeed,
+      vm::clamp(
+        speed + deltaSpeed,
+        Preferences::MinCameraFlyMoveSpeed,
+        Preferences::MaxCameraFlyMoveSpeed));
+
+    event->accept();
+    return;
+  }
+
+  MapViewBase::wheelEvent(event);
+}
+
+void MapView3D::cancel()
+{
+  // Noiuake: releasing latched mouse look outranks the rest of the cancel chain
+  // — with the pointer hidden and pinned, getting out has to come before
+  // deselecting or closing a group. Hooking the Cancel *action* rather than the
+  // Escape key matters: Escape is bound to a QAction (ActionManager's
+  // "Controls/Map view/Cancel"), and Qt's shortcut machinery consumes it long
+  // before any key event reaches this widget.
+  if (m_noiuakeMouseLook)
+  {
+    noiuakeSetMouseLook(false);
+    return;
+  }
+
+  MapViewBase::cancel();
+}
+
+void MapView3D::noiuakeSetMouseLook(const bool active)
+{
+  if (active == m_noiuakeMouseLook)
+  {
+    return;
+  }
+
+  m_noiuakeMouseLook = active;
+
+  if (active)
+  {
+    m_noiuakeMouseLookRestorePos = QCursor::pos();
+    m_noiuakeMouseLookRestoreCursor = cursor();
+    setCursor(Qt::BlankCursor);
+    QCursor::setPos(mapToGlobal(rect().center()));
+  }
+  else
+  {
+    setCursor(m_noiuakeMouseLookRestoreCursor);
+    QCursor::setPos(m_noiuakeMouseLookRestorePos);
+  }
+
+  update();
 }
 
 void MapView3D::initializeGL()
@@ -587,6 +725,8 @@ void MapView3D::renderTools(
 void MapView3D::beforePopupMenu()
 {
   m_flyModeHelper->resetKeys();
+  // Noiuake: a menu is unusable with the pointer hidden and pinned.
+  noiuakeSetMouseLook(false);
 }
 
 void MapView3D::linkCamera(CameraLinkHelper& /* helper */) {}

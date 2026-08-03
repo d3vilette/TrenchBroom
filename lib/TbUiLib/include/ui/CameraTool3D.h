@@ -35,6 +35,15 @@ namespace ui
 {
 class GestureTracker;
 
+/**
+ * Camera look speed, in radians per point of mouse movement, honouring the
+ * CameraLookSpeed / CameraLookInvertH / CameraLookInvertV preferences and the
+ * camera's current zoom. Exposed so that MapView3D's toggled mouse look rotates
+ * at exactly the same rate as a right-button look drag.
+ */
+float lookSpeedH(const gl::PerspectiveCamera& camera);
+float lookSpeedV(const gl::PerspectiveCamera& camera);
+
 class CameraTool3D : public ToolController, public Tool
 {
 private:

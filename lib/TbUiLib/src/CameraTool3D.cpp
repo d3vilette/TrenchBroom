@@ -83,25 +83,9 @@ float adjustSpeedToZoom(const gl::PerspectiveCamera& camera, const float speed)
   return speed * vm::min(1.0f, camera.zoomedFov() / camera.fov());
 }
 
-float lookSpeedH(const gl::PerspectiveCamera& camera)
-{
-  auto speed = pref(Preferences::CameraLookSpeed) / -50.0f;
-  if (pref(Preferences::CameraLookInvertH))
-  {
-    speed *= -1.0f;
-  }
-  return adjustSpeedToZoom(camera, speed);
-}
-
-float lookSpeedV(const gl::PerspectiveCamera& camera)
-{
-  auto speed = pref(Preferences::CameraLookSpeed) / -50.0f;
-  if (pref(Preferences::CameraLookInvertV))
-  {
-    speed *= -1.0f;
-  }
-  return adjustSpeedToZoom(camera, speed);
-}
+// NOTE: lookSpeedH/lookSpeedV are declared in CameraTool3D.h and defined below,
+// outside this anonymous namespace, so that MapView3D's toggled mouse look can
+// share them.
 
 float panSpeedH(const gl::PerspectiveCamera& camera)
 {
@@ -258,6 +242,26 @@ public:
 };
 
 } // namespace
+
+float lookSpeedH(const gl::PerspectiveCamera& camera)
+{
+  auto speed = pref(Preferences::CameraLookSpeed) / -50.0f;
+  if (pref(Preferences::CameraLookInvertH))
+  {
+    speed *= -1.0f;
+  }
+  return adjustSpeedToZoom(camera, speed);
+}
+
+float lookSpeedV(const gl::PerspectiveCamera& camera)
+{
+  auto speed = pref(Preferences::CameraLookSpeed) / -50.0f;
+  if (pref(Preferences::CameraLookInvertV))
+  {
+    speed *= -1.0f;
+  }
+  return adjustSpeedToZoom(camera, speed);
+}
 
 CameraTool3D::CameraTool3D(gl::PerspectiveCamera& camera)
   : ToolController{}
