@@ -408,6 +408,7 @@ public:
   void noiuakeAddToolBarActions();
   void noiuakeRunCompile(const QString& nameFragment);
   void noiuakeLaunch(bool atCameraView);
+  void noiuakeMaterialPreview();
   bool noiuakeGameRunning() const;
   void noiuakeUpdateLaunchButtons();
 

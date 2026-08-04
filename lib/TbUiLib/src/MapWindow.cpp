@@ -2681,6 +2681,10 @@ void MapWindow::noiuakeAddToolBarActions()
   add("FinalSlow.svg", "Full", "Compile: final quality (full vis + extra4 bounce dirt)", [this]() {
     noiuakeRunCompile("final");
   });
+  add("MaterialPreview.svg", "Materials", "Open the in-engine material preview (or toggle it in the running game)", [this]() {
+    noiuakeMaterialPreview();
+  });
+
   m_noiuakeLaunchAtViewAction = m_toolBar->addAction(
     loadSVGIcon(std::filesystem::path{"LaunchMapToLocation.svg"}), "Launch @ View");
   m_noiuakeLaunchAtViewAction->setToolTip(
@@ -2799,6 +2803,61 @@ void MapWindow::noiuakeRunCompile(const QString& nameFragment)
           QString{"Noiuake compile failed to start: %1"}.arg(
             QString::fromStdString(e.msg)),
           8000);
+      });
+}
+
+/*
+ * Open the engine's material preview overlay (docs/MATERIAL_SYSTEM_PLAN.md).
+ *
+ * Not launch-only: if the game is already up, toggle the overlay in place via
+ * the agent command file, the same trick Launch @ View uses to teleport rather
+ * than start a second instance. So the button means "show me the material
+ * preview" whether or not the game is running.
+ *
+ * There is no runtime flag to add — "matpreview" is a console command, and
+ * Quake already accepts +command on the command line. It must stay
+ * argument-free: stuffcmds truncates a +command value at any '-'.
+ */
+void MapWindow::noiuakeMaterialPreview()
+{
+  const auto& map = m_document->map();
+  const auto& profiles = map.gameInfo().gameEngineConfig.profiles;
+  if (profiles.empty())
+  {
+    statusBar()->showMessage(
+      "Noiuake: no game engine profile configured for this game", 5000);
+    return;
+  }
+
+  auto profile = profiles.front();
+
+  if (noiuakeGameRunning())
+  {
+    const auto cmdPath = pathAsQPath(profile.path.parent_path() / "agent_cmds.txt");
+    auto file = QFile{cmdPath};
+    if (file.open(QFile::WriteOnly | QFile::Append | QFile::Text))
+    {
+      QTextStream{&file} << "matpreview\n";
+      statusBar()->showMessage("Noiuake: toggled the material preview in the running game", 5000);
+    }
+    else
+    {
+      statusBar()->showMessage("Noiuake: could not write the running game's command file", 8000);
+    }
+    return;
+  }
+
+  // The engine defers this until the map finishes its signon handshake, so it
+  // is safe to pass alongside +map.
+  profile.parameterSpec += " +matpreview";
+
+  launchGameEngineProfile(profile, LaunchGameEngineVariables{map})
+    | kdl::transform([&]() {
+        statusBar()->showMessage("Noiuake: game launching into the material preview", 5000);
+      })
+    | kdl::transform_error([&](const auto& e) {
+        statusBar()->showMessage(
+          QString{"Noiuake launch failed: %1"}.arg(QString::fromStdString(e.msg)), 8000);
       });
 }
 
